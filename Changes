@@ -1,0 +1,20 @@
+Revision history for Perl script ./jpgresize_0.2_beta.pl.
+
+0.1 beta  Tue Jan 20 23:12 2009
+	- jpg resize function is implemented by using the Image::Resize package
+	- The following parameters are implemented:
+	  - width and height parameters
+	  - max_width, min_width, max_height and max_width parameters
+	  - extension parameter
+	  - dir parameter
+	  - help parameter
+	  - redo parameter
+	  - verbose parameter
+	  - Version parameter
+0.2 beta  Tue Jan 27 19:02 2009
+	- I added the Scale parameter
+	- I improve the comments and the names of the variables of the internal 
+	  check_height and check_width subroutines. 
+0.3 beta  Thu Jan 29 21:35 2009
+	- I improved the default values
+	- I improved the parameter checks

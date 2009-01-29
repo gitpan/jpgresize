@@ -1,0 +1,16 @@
+--- #YAML:1.0
+name:                jpgresize
+version:             0.3-beta
+abstract:            ~
+license:             ~
+author:              
+    - Florian Goslich (flo@goslich-online.de)
+generated_by:        ExtUtils::MakeMaker version 6.44
+distribution_type:   module
+requires:     
+    GD:                            2.41
+    Getopt::Long:                  2.37
+    Image::Resize:                 0.5
+meta-spec:
+    url:     http://module-build.sourceforge.net/META-spec-v1.3.html
+    version: 1.3

@@ -1,0 +1,401 @@
+#!/usr/bin/perl
+################################################################################
+#     jpgresize.pl : Script for resizing JPG images                            #
+#     Version: 0.3 beta                                                        #
+#                                                                              #
+#     jpgresize.pl is a perl script which uses the module Image::Resize for   #
+#     resizing JPG images.                                                     #
+#                                                                              #
+#     Author: Florian Goslich                                                  #
+#     Email: flo@goslich-online.de                                             #
+#     Copyright 2009 Florian Goslich                                           #
+#                                                                              #
+#     This program is free software: you can redistribute it and/or modify     #
+#     it under the terms of the GNU General Public License as published by     #
+#     the Free Software Foundation, either version 3 of the License, or        #
+#     (at your option) any later version.                                      #
+#                                                                              #
+#     This program is distributed in the hope that it will be useful,          #
+#     but WITHOUT ANY WARRANTY; without even the implied warranty of           #
+#     MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the            #
+#     GNU General Public License for more details.                             #
+#                                                                              #
+#     You should have received a copy of the GNU General Public License        #
+#     along with this program.  If not, see <http://www.gnu.org/licenses/>.    #
+#                                                                              #
+################################################################################
+use vars qw($VERSION);
+$VERSION = '0.3-beta';
+
+use strict;
+use warnings;
+use Image::Resize;
+use Getopt::Long qw(:config no_ignore_case auto_help);
+
+# Default Values
+use constant SCALE => '0.3';
+use constant EXTENSION => "_small";
+
+# Only files with these extensions are allowed
+use constant ALLOWED_IMAGE_EXT => 'jpg|jpeg';
+
+# Debug Modus
+use constant DEBUG => 0;
+
+my %Option;
+
+# The following parameters will be tested for positive values
+my @Number_check=qw(Scale Width Height max_width max_height min_width 
+				    min_height);
+
+my $eol="\n";
+$eol='' if (DEBUG);
+unless (GetOptions(\%Option, 'Scale=f', 'Width=i','Height=i', 'max_width=i', 
+							 'max_height=i', ,'min_width=i', 'min_height=i',
+							 'extension=s' ,'redo', 'dir=s',
+							 'verbose', 'Version')) {
+	die $!.$eol;
+}
+	
+if (defined $Option{Version}) {
+	print "Version: ".$VERSION."\n";
+	exit 0;
+}
+if (defined $Option{Scale} && 
+   (defined $Option{Width} || defined $Option{Height})) {
+	die "You must not set the -S and the -W / -H options together.".$eol;
+}
+unless (defined $Option{Scale} || 
+		defined $Option{Width} && defined $Option{Height}) {
+	if (defined $Option{Width}) {
+		$Option{Height}=0;
+	} elsif  (defined $Option{Height}) {
+		$Option{Width}=0;
+	} else {
+		$Option{Scale}=SCALE;
+	}
+}
+if (defined $Option{max_height} && defined $Option{min_height} &&
+	$Option{min_height} > $Option{max_height} ||
+	defined $Option{max_width} && defined $Option{min_width} &&
+	$Option{min_width} > $Option{max_width}) {
+		die "min parameters must not be bigger than max parameters.".$eol;
+}
+unless (defined $Option{extension}) {
+	if (defined $Option{dir}) {
+		$Option{extension}='';
+	} else {
+		$Option{extension}=EXTENSION;
+	}
+}
+foreach (@Number_check) {
+	$Option{$_}=abs($Option{$_}) if (defined $Option{$_});
+}
+
+if (@ARGV == 0) {
+	die "No JPG-file is given!".$eol;	
+}
+
+my $allowed_img_ext = ALLOWED_IMAGE_EXT;
+$allowed_img_ext.='|'.uc(ALLOWED_IMAGE_EXT);
+if (defined $Option{dir}) {
+	unless (-d $Option{dir}) {
+		die $Option{dir}."doesn't exist".$eol;
+	}
+	if ($Option{dir} !~ /\/$/) {
+		$Option{dir}.='/';
+	}
+}
+foreach(@ARGV){
+	unless ( /(?:$allowed_img_ext)$/) {
+		warn "The file $_ has an irregular extension!".$eol;
+		next;
+	}
+	if (defined $Option{redo}) {
+		if (/$Option{extension}\.(?:$allowed_img_ext)$/){
+			next;
+		}
+	}
+	my $image;
+	eval{$image = Image::Resize->new($_)};
+	if ($@) {
+		my $warning='';
+		$warning=$@ if(DEBUG);
+		die $warning."Error while trying to resize the image $_".$eol;
+	}
+	my ($newpic,$newpicpath,$picpath,$picname,$picext,$pic_fh);
+	my ($width,$height)=($Option{Width},$Option{Height});
+	if (/\//) {
+		$_ =~ /(.+\/)(.+?)\.($allowed_img_ext)$/;
+		($picpath,$picname,$picext)=($1,$2,$3);
+	} else {
+		$_ =~ /(.+?)\.($allowed_img_ext)$/;
+		($picname,$picext)=($1,$2);
+		$picpath='./';
+	}
+	if (defined $Option{Scale}) {
+		my $width_orig = $image->width();
+		my $height_orig = $image->height();
+		my $ratio = $width_orig/$height_orig;
+		my ($scale,$err);
+		($scale,$width,$height,$err)=&scalecalc($ratio,$Option{Scale},
+			$width_orig,$height_orig,0);
+		if ($err) {
+			warn "Can't resize the image $_ by retaining the proportions. I will set the resolution to ".$width."x".$height.". Check your min/max parameters to avoid this proplem".$eol;
+		} elsif ($scale != $Option{Scale}) {
+			print "I will use the scale $scale for the image $_, because your scale value of ".$Option{Scale}." is not compatible with your min/max parameters.\n";  
+		}
+		eval{$newpic = $image->resize($width,$height,!$err)};
+		if ($@) {
+			my $warning='';
+			$warning=$@ if(DEBUG);
+			die $warning."Error while trying to resize the image $_".$eol;
+		}
+	} elsif ($width && $height) {
+		eval{$newpic = $image->resize($width,$height,0)};
+		if ($@) {
+			my $warning='';
+			$warning=$@ if(DEBUG);
+			die $warning."Error while trying to resize the image $_".$eol;
+		}
+	} else {
+		my $err;
+		my $width_orig = $image->width();
+		my $height_orig = $image->height();
+		my $ratio = $width_orig/$height_orig;
+		($width,$height,$err)=&calc($ratio,$width,$height,0);
+		if ($err) {
+			warn "Can't resize the image $_ by retaining the proportions. I will set the resolution to ".$width."x".$height.". Check your min/max parameters to avoid this proplem".$eol;
+		}
+		eval{$newpic = $image->resize($width,$height,!$err)};
+		if ($@) {
+			my $warning='';
+			$warning=$@ if(DEBUG);
+			die $warning."Error while trying to resize the image $_".$eol;
+		}
+	}
+	if (defined $Option{dir}) {
+		$newpicpath = $Option{dir}.$picname.$Option{extension}.'.'.$picext;
+	} else {
+		$newpicpath = $picpath.$picname.$Option{extension}.'.'.$picext;
+	}
+	open($pic_fh, '>'.$newpicpath) ||
+		die "Can't open ".$newpicpath.$eol;
+	print $pic_fh $newpic->jpeg();
+	close($pic_fh);
+	if ($Option{verbose}) {
+		print "The image $_ was resized to ".$width."x".$height." and saved to $newpicpath\n";
+	}
+}
+exit 0;
+
+sub scalecalc {
+	my $ratio = shift;
+	my $scale = shift;
+	my $width_orig = shift;
+	my $height_orig =shift;
+	my $trial = shift;
+	my $width = int $scale*$width_orig;
+	my $height = int $scale*$height_orig;
+	if ($trial >= 3) {
+		&check_height(\$height);
+		&check_width(\$width);
+		return (0,$width, $height,1);
+	}
+	if (defined $Option{min_height} || defined $Option{max_height}) {
+		if (&check_height(\$height)) {
+			$scale = $height/$height_orig;		
+			return &scalecalc($ratio,$scale,$width_orig,$height_orig,++$trial);
+		}
+	}
+	if (defined $Option{min_width} || defined $Option{max_width}) {
+		if (&check_width(\$width)) {
+			$scale = $width/$width_orig;		
+			return &scalecalc($ratio,$scale,$width_orig,$height_orig,++$trial);
+		}
+	}
+	return ($scale,$width,$height,0);
+}
+
+sub calc {
+	my $ratio = shift;
+	my $width = shift;
+	my $height = shift;
+	my $trial = shift;
+	if ($trial >= 2) {
+		&check_height(\$height);
+		&check_width(\$width);
+		return ($width, $height,1);
+	}
+	if ($width) {
+		$height = int $width/$ratio;
+		if (defined $Option{min_height} || defined $Option{max_height}) {
+			if (&check_height(\$height)) {
+				$width=0;
+				return &calc($ratio,$width,$height,++$trial);
+			}
+		}
+	} elsif ($height) {
+		$width = int $ratio*$height;
+		if (defined $Option{min_width} || defined $Option{max_width}) {
+			if (&check_width(\$width)) {
+				$height=0;
+				return &calc($ratio,$width,$height,++$trial);
+			}
+		}
+	}
+	return ($width,$height,0);
+}
+
+# Checks and updates the height, if necessary.
+# Return value
+# 1: update occurred
+# 0: update not occurred
+sub check_height {
+	my $height_ref=shift;
+	my $update=0;
+	if (defined $Option{min_height}) {
+		if ($$height_ref < $Option{min_height}) {
+			$$height_ref = $Option{min_height};
+			$update=1;
+		}
+	}
+	if (defined $Option{max_height}) {
+		if ($$height_ref > $Option{max_height}) {
+			$$height_ref = $Option{max_height};
+			$update=1;
+		}
+	}
+	return $update;
+}
+
+# Checks and updates the width, if necessary.
+# Return value
+# 1: update occurred
+# 0: update not occurred
+sub check_width {
+	my $width_ref = shift;
+	my $update=0;
+	if (defined $Option{min_width}) {
+		if ($$width_ref < $Option{min_width}) {
+			$$width_ref = $Option{min_width};
+			$update=1;
+		}
+	} 
+	if (defined $Option{max_width}) {
+		if ($$width_ref > $Option{max_width}) {
+			$$width_ref = $Option{max_width};
+			$update=1;
+		}
+	}
+	return $update;
+}
+
+
+__END__
+
+=head1 NAME
+
+jpgresize.pl - resizes JPG images
+
+=head1 SYNOPSIS
+
+jpgresize.pl [-v] [-V] [-r] [-h] [-W E<lt>widthE<gt>] [-H E<lt>heightE<gt>] 
+             [-S E<lt>scaleE<gt>] [--max_width=E<lt>max widthE<gt>]
+             [--max_height=E<lt>max heightE<gt>] [--min_width=E<lt>min widthE<gt>]
+             [--min_height=E<lt>min heightE<gt>] [-e E<lt>extenionE<gt>]
+             [-d E<lt>directoryE<gt>] E<lt>image1.jpgE<gt> [ | E<lt>image2.jpgE<gt> | ...]
+
+=head1 DESCRIPTION
+
+jpgresize.pl resizes a couple of JPG images simultaniously. The following parameters are available:
+
+=head2 OPTIONS
+
+=over 4
+
+=item -S I<scale>
+
+Scales the image. If you neither set a -S option nor a -W or -H option, the default value -S 0.3 will be used. 
+You must not set the -S and the -W / -H options together.
+
+=item -W I<width>, -H I<height>
+
+Sets the new width and height in pixels. You can retain image proportions by setting either the width or the height. You can change the proportions by setting both parameters.
+You must not set the -S and the -W / -H options together.
+
+=item --max_width=I<max width>,  --max_height=I<max height>
+
+Sets the maximum height and the maximum width. The image resolution will not be greater than these values unless you set a greater value with the -W or -H option. 
+
+=item --min_width=I<min width>,  --min_height=I<min height>
+
+Sets the minimum height and the minimum width. The image resolution will not be smaller than these values unless you set a smaller value with the -W or -H option. 
+
+=item -e I<extension>
+
+Sets the extension of the new images. Default is '_small' or '' in case, that the -d option is used.
+
+=item -d I<dir>
+
+The new images will be saved in this directory.
+
+=item -h
+
+Prints a short help.
+
+=item -r
+
+Redo option. By setting this parameter all files with the extension string in the filename will be ignored.
+
+=item -v
+
+Verbose mode.
+
+=item -V
+
+Version
+
+=back
+
+=head1 PREREQUISITES
+
+This script requires the following modules:
+
+=over 4
+
+=item C<strict>
+
+=item C<warnings>
+
+=item C<Getopt::Long 2.37>
+
+=item C<Image::Resize 0.5>
+
+=back
+
+=head1 SEE ALSO
+
+L<Image::Resize>
+
+=head1 AUTHOR
+
+Florian Goslich: E<lt>flo@goslich-online.deE<gt>
+
+=head1 COPYRIGHT AND DISCLAIMER
+
+This program is Copyright 2009 by Florian Goslich.
+This program is free software: you can redistribute it and/or modify     
+it under the terms of the GNU General Public License as published by     
+the Free Software Foundation, either version 3 of the License, or        
+(at your option) any later version.                                      
+ 
+This program is distributed in the hope that it will be useful,          
+but WITHOUT ANY WARRANTY; without even the implied warranty of           
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the            
+GNU General Public License for more details.                             
+ 
+You should have received a copy of the GNU General Public License        
+along with this program. If not, see E<lt>http://www.gnu.org/licenses/E<gt>.
+
+=cut

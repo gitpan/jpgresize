@@ -1,0 +1,11 @@
+COPYING
+Changes
+INSTALL
+jpgresize
+Makefile.PL
+MANIFEST
+README
+t/check.jpg
+t/check.t
+t/exists.t
+META.yml                                 Module meta-data (added by MakeMaker)

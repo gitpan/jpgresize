@@ -1,5 +1,7 @@
 use ExtUtils::MakeMaker;
 
+require 5.6.0;
+
 WriteMakefile(
     'NAME'	=> 'jpgresize',
     'VERSION_FROM' => './jpgresize', # VERSION

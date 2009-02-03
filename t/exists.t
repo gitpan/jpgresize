@@ -2,9 +2,12 @@
 
 use strict;
 use warnings;
-use vars qw(@Makefilelines %Installpaths %Options &exists_script 
-	$HomeDir $Tests $Version_new $Version_old &get_version_from_file);
+use Config;
+use vars qw(@Testversions @Installpaths %Options &exists_script $Tests
+	$HomeDir $Version_new $Version_old &get_version_from_file);
 use constant SCRIPT => 'jpgresize';
+# Testversions order (better tested versions first)
+@Testversions=qw(beta alpha pre-alpha);
 
 print "This test will check, if you already have installed ".SCRIPT."\n";
 
@@ -12,10 +15,17 @@ BEGIN{
 	my $fh;
 	my $convert = sub {
 		foreach (@_) {
-			chomp;
 			s/\~\//$HomeDir\//;
 		}
 		return @_;
+	};
+	my $chompconvert = sub {
+		my @return;
+		foreach (@_) {
+			chomp;
+			push(@return,$convert->($_));
+		}
+		return @return;
 	};
 	my $split_key_value = sub {
 		my @rvalue;
@@ -24,18 +34,26 @@ BEGIN{
 		}
 		return @rvalue;
 	};
+	my %pathstmp;
+	my $addtopaths = sub {
+		my $value = shift; 
+		unless (exists $pathstmp{$value} || $value =~ /^\s*$/) {
+			push(@Installpaths,$value);
+			$pathstmp{$value}=1;
+		}
+	};
 	$HomeDir = $ENV{HOME}; # Home directory
 	
 	# Get Makefile 
 	open ($fh,"<./Makefile") || die "Can't open ./Makefile";
-	@Makefilelines=$convert->(grep /^\w+ = /,<$fh>);
+	my @makefilelines=$chompconvert->(grep /^\w+ = /,<$fh>);
 	close ($fh);
 	
 	# Get Makefile Options
-	%Options=$split_key_value->(@Makefilelines);
+	%Options=$split_key_value->(@makefilelines);
 
 	# Where can I find a previous version?
-	%Installpaths = (
+	my %makefileinstallpaths = (
 		INSTALLBIN => 1,
 		DESTINSTALLBIN => 1,
 		INSTALLSITEBIN => 1,
@@ -49,12 +67,15 @@ BEGIN{
 		INSTALLVENDORSCRIPT => 1, 
 		DESTINSTALLVENDORSCRIPT => 1 
 	);
-	my %pathstmp;
-	$Tests=0;
-	foreach (@Makefilelines) {
-		chomp;
+	my %configinstallpaths = (
+		bin => 1,
+		sitebin => 1,
+		vendorbin => 1,
+		scriptdir => 1
+	);
+	foreach (@makefilelines) {
 		my ($key, $value) = $split_key_value->($_);
-		next unless ($Installpaths{$key});
+		next if (!$makefileinstallpaths{$key});
 		if ($value =~ /\$/) {
 			$value =~ s/\$\((\w+)\)/\$Options\{$1\}/g;
 			eval '$value="'.$value.'"';
@@ -64,14 +85,14 @@ BEGIN{
 			}
 		}
 		$value =~ s/\/+/\//g;
-		unless (exists $pathstmp{$value}) {
-			$Installpaths{$key}=$value;
-			$pathstmp{$value}=1;
-			$Tests++;
-		} else {
-			$Installpaths{$key}=0;
-		}
+		$addtopaths->($value);
 	}
+	foreach (keys %configinstallpaths) {
+		next unless ($configinstallpaths{$_} && exists $Config{$_} 
+			&& defined $Config{$_});
+		$addtopaths->($convert->($Config{$_}));
+	}
+	$Tests = @Installpaths;
 }	
 use Test::Simple tests => $Tests;
 # Get Versions
@@ -85,27 +106,26 @@ if ($Version_new !~ /\w/) {
 	die "Can't find the VERSION of ".SCRIPT."\n";
 }
 
-foreach my $value (keys %Installpaths) {
-	next unless($Installpaths{$value});
+foreach my $value (@Installpaths) {
 	my $exists_rvalue=0;
-	if($exists_rvalue=exists_script($Installpaths{$value})) {
+	if($exists_rvalue=exists_script($value)) {
 		if ($exists_rvalue == 1) {
-			ok(1, SCRIPT." already exists in the directory ".$Installpaths{$value}.". The versions compare, it is not neccessary to install ".SCRIPT." again");
+			ok(1, SCRIPT." already exists in the directory ".$value.". The versions compare, it is not neccessary to install ".SCRIPT." again");
 		} elsif ($exists_rvalue == 2) {
-			ok(1, SCRIPT." already exists in the directory ".$Installpaths{$value}." but you have a newer testversion. I will overwrite the old one.");
+			ok(1, SCRIPT." already exists in the directory ".$value." but the testlevel of your version is higher. You should install the new one.");
 		} elsif ($exists_rvalue == 3) {
-			ok(0, SCRIPT." already exists in the directory ".$Installpaths{$value}." and the testversion is newer. You should not overwrite it with an old testversion.");
+			ok(0, SCRIPT." already exists in the directory ".$value." and its testlevel is higher. You should not install a version with a lower testlevel.");
 		} elsif ($exists_rvalue == 4) {
-			ok(0, SCRIPT." already exists in the directory ".$Installpaths{$value}." and it seems, that it is more tested than the new one. Do you really want to overwrite it with a newer and less tested version?");
+			ok(0, SCRIPT." already exists in the directory ".$value." and it seems, that it is more tested than the new one. Do you really want to install a newer and less tested version?");
 		} elsif ($exists_rvalue == 5) {
-			ok(1, SCRIPT." already exists in the directory ".$Installpaths{$value}." but you have a newer version. I will overwrite the old one.");
+			ok(1, SCRIPT." already exists in the directory ".$value." but you have a newer version. You should install the new one.");
 		} elsif ($exists_rvalue == 6) {
-			ok(0, SCRIPT." already exists in the directory ".$Installpaths{$value}." and the version is newer. You should not overwrite it with an old version.");
+			ok(0, SCRIPT." already exists in the directory ".$value." and the version is newer. You should not install an old version.");
 		} else {
-			ok(0, SCRIPT." already exists in the directory ".$Installpaths{$value});
+			ok(0, SCRIPT." already exists in the directory ".$value);
 		}
 	} else {
-		ok(1, "Nothing found in ".$Installpaths{$value});
+		ok(1, "Nothing found in ".$value);
 	}
 }
 sub get_version_from_file {
@@ -123,8 +143,8 @@ sub get_version_from_file {
 # Return Value
 # 0 Script doesn't exists
 # 1 Script exists and the versions compare
-# 2 Script exists and it is an older testversion
-# 3 Script exists and it is an newer testversion
+# 2 Script exists and it is an older testversion (versions need not compare)
+# 3 Script exists and it is an newer testversion (versions compare)
 # 4 An older version of the Script exists, but its testversionlevel is higher
 # 5 Script exists and the version is older
 # 6 Script exists and the version is newer
@@ -141,12 +161,11 @@ sub exists_script {
 	};
 	my $get_testversion_number = sub {
 		my $ext = shift;
-		my @testversions=qw(alpha beta gamma);
-		my $level = 4;
+		my $level = @Testversions+1;
 		if ($ext ne '') {
 			do {
 				$level--;
-			} until ($level == 0 || $ext =~ /$testversions[3-$level]/)
+			} until ($level == 0 || $ext =~ /^[\s\-]?$Testversions[3-$level]$/)
 		}
 		return $level;
 	};
@@ -201,7 +220,13 @@ sub exists_script {
 				return 5;
 			}
 		}
-		return 6 if ($compare->($version_old_nr,$version_new_nr,'>'));
+		if ($compare->($version_old_nr,$version_new_nr,'>')) {
+			if ($testversion_old < $testversion_new) {
+				return 2;
+			} else {
+				return 6;
+			}
+		}
 	} else {
 		return 0;
 	}

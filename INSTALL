@@ -1,4 +1,37 @@
-INSTALL jpgresize
+REQUIREMENTS:
+
+You need the following perl modules to run jpgresize:
+
+GD Version 2.41
+Image::Resize Version 0.5
+
+You can find this modules on the Comprehensive Perl Archive Network 
+(http://www.cpan.org/). If you have installed a cpan-client, you can use
+the following commands:
+
+  # sudo cpan
+  Password:
+  CPAN: File::HomeDir loaded ok (v0.80)
+
+  cpan shell -- CPAN exploration and modules installation (v1.9205)
+  ReadLine support enabled
+
+  cpan[1]> install GD
+
+  ...
+
+  cpan[2]> install Image::Resize
+
+  ...
+
+  cpan[3]> quit
+
+First you maybe need the libgd 2.0.28 (http://www.libgd.org/) to install the GD module (read the README file of GD to get further informations).
+
+
+
+
+INSTALL jpgresize:
 
 To install the script and man pages in the standard areas, 
 give the sequence of commands
